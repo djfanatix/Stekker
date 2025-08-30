@@ -1,0 +1,10 @@
+{
+  "name": "Stekker Integration",
+  "content_in_root": false,
+  "dependencies": [],
+  "codeowners": ["@djfanatix"],
+  "homeassistant": "2023.8.0",
+  "version": "1.0.0",
+  "description": "Integration for Stekker.app price forecasts",
+  "repository": "https://github.com/djfanatix/stekker"
+}

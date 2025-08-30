@@ -1,0 +1,11 @@
+{
+  "domain": "stekker",
+  "name": "Stekker.app Integration",
+  "version": "1.0.0",
+  "config_flow": true,
+  "config_entries": ["country", "markup"],
+  "documentation": "https://github.com/djfanatix/stekker",
+  "requirements": ["aiohttp"],
+  "codeowners": ["@djfanatix"],
+  "iot_class": "cloud_polling"
+}
