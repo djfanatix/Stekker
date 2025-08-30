@@ -10,8 +10,8 @@ Attributes to send directly to EVCC and EMHASS
 
 # Todo
 
-Currencies
-Multiple sensors
-Template for VAT and extra charges
-EMHASS sensor
-EVCC sensor finetuning
+- Currencies
+- Multiple sensors
+- Template for VAT and extra charges
+- EMHASS sensor
+- EVCC sensor finetuning
