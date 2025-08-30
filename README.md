@@ -1,14 +1,14 @@
-#Stekker.app
+# Stekker.app
 
 HACS Custom Component to retrieve dayahead prices + AI Forecast
 
-#Intro
+# Intro
 
 Unofficial Custom Component to fetch prices from the Stekker.app website. Retrieves an additional 24h AI Forecast.
 
 Attributes to send directly to EVCC and EMHASS
 
-#Todo
+# Todo
 
 Currencies
 Multiple sensors
