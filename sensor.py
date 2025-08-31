@@ -4,7 +4,7 @@ import aiohttp
 import re
 import json
 
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed, CoordinatorEntity
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.entity import Entity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -33,6 +33,7 @@ class StekkerAPI:
                     raise UpdateFailed(f"HTTP {resp.status}")
                 html = await resp.text()
 
+        # Extract JSON data from the HTML attribute
         match = re.search(r'data-epex-forecast-graph-data-value="(.+?)"', html, re.DOTALL)
         if not match:
             _LOGGER.error("No forecast data found in HTML")
@@ -45,6 +46,7 @@ class StekkerAPI:
             _LOGGER.error("Failed parsing JSON array: %s", e)
             raise UpdateFailed(e)
 
+        # Separate market and forecast
         market_obj = next((obj for obj in data_array if "Market price" in obj.get("name", "")), None)
         forecast_obj = next((obj for obj in data_array if "Forecast price" in obj.get("name", "")), None)
 
@@ -53,7 +55,7 @@ class StekkerAPI:
             raise UpdateFailed("No price data found")
 
         market_data = [
-            {"time": t, "price": float(p)/1000}
+            {"time": t, "price": float(p)/1000}  # EUR/MWh -> EUR/kWh
             for t, p in zip(market_obj.get("x", []), market_obj.get("y", []))
             if p is not None
         ] if market_obj else []
@@ -64,6 +66,7 @@ class StekkerAPI:
             if p is not None
         ] if forecast_obj else []
 
+        # Merge for EVCC
         merged_data = market_data + forecast_data
         merged_data.sort(key=lambda x: x["time"])
 
@@ -114,17 +117,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     return True
 
 
-class StekkerSensor(CoordinatorEntity):
+class StekkerSensor(Entity):
     """Stekker price sensor."""
 
     def __init__(self, coordinator: StekkerCoordinator):
-        super().__init__(coordinator)
+        self.coordinator = coordinator
         self._name = f"Stekker {self.coordinator.bidding_zone}"
         self._attr_unique_id = f"stekker_{self.coordinator.bidding_zone}"
 
     @property
     def name(self):
         return self._name
+
+    @property
+    def should_poll(self):
+        return False  # polling via coordinator
+
+    async def async_update(self):
+        await self.coordinator.async_request_refresh()
 
     @property
     def state(self):
@@ -149,7 +159,7 @@ class StekkerSensor(CoordinatorEntity):
 
         now_local = datetime.now().astimezone()
         start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        
+
         def split_day(data_list, day_offset):
             day = (start_of_today_local + timedelta(days=day_offset)).date()
             return [
@@ -162,7 +172,7 @@ class StekkerSensor(CoordinatorEntity):
         tomorrow = split_day(data["merged"], 1)
         dayafter = split_day(data["merged"], 2)
 
-        # EVCC start vanaf 00:00 lokale tijd, tijden in UTC
+        # EVCC: start vanaf 00:00 lokale tijd, UTC timestamps
         evcc_list = []
         for x in data["merged"]:
             start_dt_local = datetime.fromisoformat(x["time"]).astimezone()

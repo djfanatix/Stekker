@@ -1,43 +1,33 @@
 DOMAIN = "stekker"
 DEFAULT_BIDDING_ZONE = "BE"  # Belgium
-
 BIDDING_ZONES_MAP = {
-    # Belgium & Netherlands
-    "BE": ["BE"],
-    "NL": ["NL"],
-
-    # Germany & Luxembourg
-    "DE-LU": ["DE-LU"],
-
-    # France & Switzerland
-    "FR": ["FR"],
-    "CH": ["CH"],
-
-    # Nordics
-    "SE4": ["SE4"],
-    "SE3": ["SE3"],
-    "SE1": ["SE1"],
-    "DK1": ["DK1"],
-    "DK2": ["DK2"],
-    "FI": ["FI"],
-    "NO1": ["NO1"],
-    "NO2": ["NO2"],
-    "NO3": ["NO3"],
-    "NO4": ["NO4"],
-    "NO5": ["NO5"],
-
-    # Other EU
-    "LV": ["LV"],
-    "LT": ["LT"],
-    "PL": ["PL"],
-    "PT": ["PT"],
-    "RO": ["RO"],
-    "RS": ["RS"],
-    "SI": ["SI"],
-    "SK": ["SK"],
-    "HU": ["HU"],
-    "AT": ["AT"],
-    "CZ": ["CZ"],
-    "HR": ["HR"],
-    "EE": ["EE"]
+    "BE": "Belgium",
+    "NL": "Netherlands",
+    "DE-LU": "Germany & Luxembourg",
+    "FR": "France",
+    "CH": "Switzerland",
+    "SE4": "Sweden SE4",
+    "SE3": "Sweden SE3",
+    "SE1": "Sweden SE1",
+    "DK1": "Denmark DK1",
+    "DK2": "Denmark DK2",
+    "FI": "Finland",
+    "NO1": "Norway NO1",
+    "NO2": "Norway NO2",
+    "NO3": "Norway NO3",
+    "NO4": "Norway NO4",
+    "NO5": "Norway NO5",
+    "LV": "Latvia",
+    "LT": "Lithuania",
+    "PL": "Poland",
+    "PT": "Portugal",
+    "RO": "Romania",
+    "RS": "Serbia",
+    "SI": "Slovenia",
+    "SK": "Slovakia",
+    "HU": "Hungary",
+    "AT": "Austria",
+    "CZ": "Czech Republic",
+    "HR": "Croatia",
+    "EE": "Estonia"
 }

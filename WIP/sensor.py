@@ -4,7 +4,7 @@ import aiohttp
 import re
 import json
 
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed, CoordinatorEntity
 from homeassistant.helpers.entity import Entity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -24,7 +24,9 @@ class StekkerAPI:
         self.bidding_zone = bidding_zone
 
     async def fetch_prices(self):
-        url = f"{self.BASE_URL}?region={self.bidding_zone}&unit=MWh"
+        url = f"{self.BASE_URL}?advanced_view=&region={self.bidding_zone}&unit=MWh"
+        _LOGGER.debug("Fetching prices from URL: %s", url)
+
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 if resp.status != 200:
@@ -33,45 +35,53 @@ class StekkerAPI:
 
         match = re.search(r'data-epex-forecast-graph-data-value="(.+?)"', html, re.DOTALL)
         if not match:
+            _LOGGER.error("No forecast data found in HTML")
             raise UpdateFailed("No price data found")
 
         raw_data = match.group(1).replace("&quot;", '"')
         try:
             data_array = json.loads(raw_data)
         except Exception as e:
-            raise UpdateFailed(f"Failed parsing JSON array: {e}")
+            _LOGGER.error("Failed parsing JSON array: %s", e)
+            raise UpdateFailed(e)
 
-        # Market & forecast
         market_obj = next((obj for obj in data_array if "Market price" in obj.get("name", "")), None)
         forecast_obj = next((obj for obj in data_array if "Forecast price" in obj.get("name", "")), None)
 
-        market_data = [{"time": t, "price": float(p)/1000} for t, p in zip(market_obj["x"], market_obj["y"])] if market_obj else []
-        forecast_data = [{"time": t, "price": float(p)/1000} for t, p in zip(forecast_obj["x"], forecast_obj["y"])] if forecast_obj else []
+        if not market_obj and not forecast_obj:
+            _LOGGER.error("No market or forecast data in JSON")
+            raise UpdateFailed("No price data found")
 
-        # Merge by time (market if exists else forecast)
-        all_times = sorted(set([x["time"] for x in market_data + forecast_data]))
-        merged_data = []
-        for t in all_times:
-            m = next((x["price"] for x in market_data if x["time"] == t), None)
-            f = next((x["price"] for x in forecast_data if x["time"] == t), None)
-            merged_data.append({"time": t, "market": m, "forecast": f})
+        market_data = [
+            {"time": t, "price": float(p)/1000}
+            for t, p in zip(market_obj.get("x", []), market_obj.get("y", []))
+            if p is not None
+        ] if market_obj else []
 
+        forecast_data = [
+            {"time": t, "price": float(p)/1000}
+            for t, p in zip(forecast_obj.get("x", []), forecast_obj.get("y", []))
+            if p is not None
+        ] if forecast_obj else []
+
+        merged_data = market_data + forecast_data
+        merged_data.sort(key=lambda x: x["time"])
+
+        _LOGGER.debug("Fetched %d market entries, %d forecast entries", len(market_data), len(forecast_data))
         return {
             "market": market_data,
             "forecast": forecast_data,
-            "merged": merged_data,
+            "merged": merged_data
         }
 
 
 class StekkerCoordinator(DataUpdateCoordinator):
-    """Coordinator for fetching Stekker data."""
+    """Coordinator for Stekker data."""
 
-    def __init__(self, hass: HomeAssistant, entry_data: dict):
-        self.bidding_zone = entry_data.get("bidding_zone", DEFAULT_BIDDING_ZONE)
-        if self.bidding_zone not in BIDDING_ZONES_MAP:
-            _LOGGER.warning("Bidding zone %s not supported!", self.bidding_zone)
+    def __init__(self, hass: HomeAssistant, bidding_zone: str):
+        self.bidding_zone = bidding_zone
+        self.api = StekkerAPI(bidding_zone)
 
-        self.api = StekkerAPI(self.bidding_zone)
         super().__init__(
             hass,
             _LOGGER,
@@ -82,27 +92,33 @@ class StekkerCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         try:
-            return await self.api.fetch_prices()
-        except Exception as err:
-            _LOGGER.error("Error fetching Stekker data: %s", err)
-            raise UpdateFailed(err)
+            data = await self.api.fetch_prices()
+            _LOGGER.debug("Data updated for zone %s", self.bidding_zone)
+            return data
+        except Exception as e:
+            _LOGGER.error("Error fetching Stekker data for %s: %s", self.bidding_zone, e)
+            raise UpdateFailed(e)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
-    coordinator = hass.data.setdefault(DOMAIN, {}).get(entry.entry_id)
-    if coordinator is None:
-        coordinator = StekkerCoordinator(hass, entry.data)
+    coordinators = []
+
+    zones = entry.data.get("bidding_zones", [DEFAULT_BIDDING_ZONE])
+    for zone in zones:
+        coordinator = StekkerCoordinator(hass, zone)
         await coordinator.async_config_entry_first_refresh()
-        hass.data[DOMAIN][entry.entry_id] = coordinator
-    async_add_entities([StekkerSensor(coordinator)], True)
+        coordinators.append(coordinator)
+
+    entities = [StekkerSensor(coordinator) for coordinator in coordinators]
+    async_add_entities(entities, True)
     return True
 
 
-class StekkerSensor(Entity):
-    """Representation of Stekker market price sensor."""
+class StekkerSensor(CoordinatorEntity):
+    """Stekker price sensor."""
 
     def __init__(self, coordinator: StekkerCoordinator):
-        self.coordinator = coordinator
+        super().__init__(coordinator)
         self._name = f"Stekker {self.coordinator.bidding_zone}"
         self._attr_unique_id = f"stekker_{self.coordinator.bidding_zone}"
 
@@ -111,26 +127,18 @@ class StekkerSensor(Entity):
         return self._name
 
     @property
-    def should_poll(self) -> bool:
-        return False
-
-    async def async_update(self):
-        await self.coordinator.async_request_refresh()
-
-    @property
     def state(self):
-        """Current price for current hour, rounded to 4 decimals."""
+        """Current price for the current hour (local time)."""
         if not self.coordinator.data:
             return None
+
         now_local = datetime.now().astimezone()
         current_hour = now_local.replace(minute=0, second=0, microsecond=0)
-        current_obj = next(
-            (x for x in self.coordinator.data["merged"]
-             if datetime.fromisoformat(x["time"]).astimezone().replace(minute=0, second=0, microsecond=0) == current_hour),
-            None
-        )
-        if current_obj:
-            return round(current_obj.get("market") or current_obj.get("forecast") or 0, 4)
+
+        for entry in self.coordinator.data["merged"]:
+            entry_dt = datetime.fromisoformat(entry["time"]).astimezone()
+            if entry_dt <= current_hour < entry_dt + timedelta(hours=1):
+                return round(entry["price"], 4)
         return None
 
     @property
@@ -140,55 +148,43 @@ class StekkerSensor(Entity):
             return {}
 
         now_local = datetime.now().astimezone()
-        start_today = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-
-        def split_day(day_offset):
-            day = (start_today + timedelta(days=day_offset)).date()
+        start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        def split_day(data_list, day_offset):
+            day = (start_of_today_local + timedelta(days=day_offset)).date()
             return [
-                round(x.get("market") or x.get("forecast") or 0, 4)
-                for x in data["merged"]
+                round(x["price"], 4)
+                for x in data_list
                 if datetime.fromisoformat(x["time"]).astimezone().date() == day
             ]
 
-        today = split_day(0)
-        tomorrow = split_day(1)
+        today = split_day(data["merged"], 0)
+        tomorrow = split_day(data["merged"], 1)
+        dayafter = split_day(data["merged"], 2)
 
-        # Raw arrays (market & forecast)
-        raw_today = [
-            {"start": x["time"],
-             "end": (datetime.fromisoformat(x["time"]) + timedelta(hours=1)).isoformat(),
-             "price": round(x.get("market") or x.get("forecast") or 0, 4)}
-            for x in data["merged"]
-            if datetime.fromisoformat(x["time"]).astimezone().date() == now_local.date()
-        ]
+        # EVCC start vanaf 00:00 lokale tijd, tijden in UTC
+        evcc_list = []
+        for x in data["merged"]:
+            start_dt_local = datetime.fromisoformat(x["time"]).astimezone()
+            if start_dt_local >= start_of_today_local:
+                start_utc = start_dt_local.astimezone(timezone.utc)
+                evcc_list.append({
+                    "start": start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "end": (start_utc + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "value": round(x["price"], 3)
+                })
 
-        raw_tomorrow = [
-            {"start": x["time"],
-             "end": (datetime.fromisoformat(x["time"]) + timedelta(hours=1)).isoformat(),
-             "price": round(x.get("market") or x.get("forecast") or 0, 4)}
-            for x in data["merged"]
-            if datetime.fromisoformat(x["time"]).astimezone().date() == (now_local + timedelta(days=1)).date()
-        ]
-
-        # EVCC format (vanaf vandaag)
-        evcc_list = [
-            {"start": x["time"],
-             "end": (datetime.fromisoformat(x["time"]) + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-             "value": round(x.get("market") or x.get("forecast") or 0, 3)}
-            for x in data["merged"]
-            if datetime.fromisoformat(x["time"]).astimezone() >= start_today
-        ]
+        evcc_json = json.dumps(evcc_list)
 
         return {
             "bidding_zone": self.coordinator.bidding_zone,
             "currency": "EUR/kWh",
             "today": today,
             "tomorrow": tomorrow,
-            "raw_today": raw_today,
-            "raw_tomorrow": raw_tomorrow,
-            "raw_market": [{"time": x["time"], "price": round(x["price"], 4)} for x in data["market"]],
-            "raw_forecast": [{"time": x["time"], "price": round(x["price"], 4)} for x in data["forecast"]],
-            "evcc": json.dumps(evcc_list),
+            "dayafter": dayafter,
+            "raw_market": data["market"],
+            "raw_forecast": data["forecast"],
+            "evcc": evcc_json,
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
