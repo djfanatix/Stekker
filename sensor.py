@@ -33,7 +33,7 @@ class StekkerAPI:
                     raise UpdateFailed(f"HTTP {resp.status}")
                 html = await resp.text()
 
-        _LOGGER.debug("Raw HTML snippet (first 500 chars): %s", html[:500])
+        _LOGGER.debug("Raw HTML snippet (first 900 chars): %s", html[:900])
 
         # Extract data-epex-forecast-graph-data-value
         match = re.search(r'data-epex-forecast-graph-data-value="(.+?)"', html, re.DOTALL)
@@ -64,11 +64,25 @@ class StekkerAPI:
                     forecast_data.append({"time": t, "price": float(p) / 1000})
 
         all_times = sorted(set([x["time"] for x in market_data + forecast_data]))
+
+       # merged_data = []
+       # for t in all_times:
+       #     m = next((x["price"] for x in market_data if x["time"] == t), None)
+       #     f = next((x["price"] for x in forecast_data if x["time"] == t), None)
+       #     merged_data.append({"time": t, "market": m, "forecast": f})
+
+                # Merge market + forecast without overlap
         merged_data = []
-        for t in all_times:
-            m = next((x["price"] for x in market_data if x["time"] == t), None)
-            f = next((x["price"] for x in forecast_data if x["time"] == t), None)
-            merged_data.append({"time": t, "market": m, "forecast": f})
+        last_market_time = market_data[-1]["time"] if market_data else None
+
+        # Market entries
+        for item in market_data:
+            merged_data.append({"time": item["time"], "market": item["price"], "forecast": None})
+
+        # Forecast entries (start na laatste market)
+        for item in forecast_data:
+            if last_market_time is None or item["time"] > last_market_time:
+                merged_data.append({"time": item["time"], "market": None, "forecast": item["price"]})
 
         return {
             "market": market_data,
@@ -224,8 +238,8 @@ class StekkerSensor(Entity):
             "raw_today": raw_today,
             "raw_tomorrow": raw_tomorrow,
             "raw_dayafter": raw_dayafter,
-            "raw_market": [{"time": x["time"], "price": round(x["price"], 4)} for x in data["market"]],
-            "raw_forecast": [{"time": x["time"], "price": round(x["price"], 4)} for x in data["forecast"]],
+            #"raw_market": [{"time": x["time"], "price": round(x["price"], 4)} for x in data["market"]],
+            #"raw_forecast": [{"time": x["time"], "price": round(x["price"], 4)} for x in data["forecast"]],
             "evcc": evcc_json,
             "last_updated": datetime.now(timezone.utc).isoformat(),
         }
