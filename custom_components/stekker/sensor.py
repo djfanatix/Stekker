@@ -13,6 +13,10 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.template import Template
+from homeassistant.components.sensor.const import (
+    SensorDeviceClass,
+    SensorStateClass,
+)
 
 from .const import DOMAIN
 
@@ -128,6 +132,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 class StekkerSensor(CoordinatorEntity):
     """Stekker price sensor."""
+
+    # Zorg dat HA weet dat dit een geld-sensor is
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+   # _attr_native_unit_of_measurement = "EUR/kWh"
+    _attr_suggested_display_precision = 4
+    _attr_force_update = True
 
     def __init__(self, coordinator: StekkerCoordinator):
         super().__init__(coordinator)
