@@ -1,7 +1,24 @@
 {
-  "title": "Stekker",
-  "data": {
-    "country": "Country",
-    "markup": "Markup"
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configureer Stekker",
+        "description": "Selecteer de EPEX bidding zone",
+        "data": {
+          "bidding_zone": "Bidding zone"
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Stekker opties",
+        "description": "Optionele instellingen voor prijsberekening",
+        "data": {
+          "additional_costs_template": "Additionele kosten (Jinja2 template)"
+        }
+      }
+    }
   }
 }

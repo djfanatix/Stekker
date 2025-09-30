@@ -9,14 +9,15 @@ async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the Stekker component from YAML (not used)."""
     return True
 
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up Stekker from a config entry."""
     from .sensor import StekkerCoordinator
 
     _LOGGER.debug("Setting up Stekker entry with data: %s", entry.data)
 
-    coordinator = StekkerCoordinator(hass, entry.data)
+    zone = entry.data.get("bidding_zone")
+    additional_costs = entry.options.get("additional_costs")  # kan None zijn
+    coordinator = StekkerCoordinator(hass, zone, additional_costs)
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
